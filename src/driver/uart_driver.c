@@ -1,6 +1,6 @@
 #include "uart_driver.h"
+#include "interrupt_manager.h"
 #include <stdio.h>
-#include <signal.h>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -8,10 +8,6 @@
 #else
     #include <unistd.h>
 #endif
-
-// 自定义信号定义，使用实时信号避免冲突
-#define UART_TX_SIGNAL 34  // SIGRTMIN
-#define UART_RX_SIGNAL 35  // SIGRTMIN+1
 
 // UART寄存器访问宏
 #define UART_TX_REG_PTR     ((volatile uint32_t*)UART_TX_REG)
@@ -23,25 +19,32 @@ static volatile int uart_tx_complete = 0;
 static volatile int uart_rx_available = 0;
 
 // UART TX中断处理函数
-void uart_tx_interrupt_handler(int sig) {
-    printf("[%s:%s] UART TX interrupt received (signal %d)\n", __FILE__, __func__, sig);
+void uart_tx_interrupt_handler(void) {
+    printf("[%s:%s] UART TX interrupt received.\n", __FILE__, __func__);
     uart_tx_complete = 1;
 }
 
 // UART RX中断处理函数  
-void uart_rx_interrupt_handler(int sig) {
-    printf("[%s:%s] UART RX interrupt received (signal %d)\n", __FILE__, __func__, sig);
+void uart_rx_interrupt_handler(void) {
+    printf("[%s:%s] UART RX interrupt received.\n", __FILE__, __func__);
     uart_rx_available = 1;
 }
 
 // UART初始化
 int uart_init(void) {
     printf("[%s:%s] UART driver initializing...\n", __FILE__, __func__);
+
+    // 注册UART中断处理函数
+    if (register_interrupt_handler(5, uart_tx_interrupt_handler) != 0) {
+        printf("[%s:%s] Failed to register TX interrupt handler\n", __FILE__, __func__);
+        return -1;
+    }
     
-    // 注册中断处理函数
-    signal(UART_TX_SIGNAL, uart_tx_interrupt_handler);
-    signal(UART_RX_SIGNAL, uart_rx_interrupt_handler);
-    
+    if (register_interrupt_handler(6, uart_rx_interrupt_handler) != 0) {
+        printf("[%s:%s] Failed to register RX interrupt handler\n", __FILE__, __func__);
+        return -1;
+    }
+
     // 配置UART控制寄存器
     *UART_CTRL_REG_PTR = 0x01;  // 启用UART
     

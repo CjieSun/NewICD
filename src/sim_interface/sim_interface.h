@@ -5,6 +5,11 @@
 #include <signal.h>
 #include <sys/mman.h>
 
+
+// 自定义信号定义，使用实时信号避免冲突
+#define UART_TX_SIGNAL 34  // SIGRTMIN
+#define UART_RX_SIGNAL 35  // SIGRTMIN+1
+
 // 寄存器映射条目
 typedef struct {
     uint32_t start_addr;

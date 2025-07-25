@@ -1,4 +1,5 @@
 #include "driver/uart_driver.h"
+#include "driver/interrupt_manager.h"
 #include "sim_interface/sim_interface.h"
 #include "simulator/plugin_interface.h"
 #include <stdio.h>
@@ -67,26 +68,32 @@ void test_uart_interrupt(void) {
 int main(void) {
     printf("[%s:%s] IC Simulator Test Starting...\n", __FILE__, __func__);
     
-    // 1. 初始化sim interface
+    // 1. 初始化interrupt manager
+    if (interrupt_manager_init() != 0) {
+        printf("[%s:%s] Failed to initialize interrupt manager\n", __FILE__, __func__);
+        return -1;
+    }
+    
+    // 2. 初始化sim interface
     if (sim_interface_init() != 0) {
         printf("[%s:%s] Failed to initialize sim interface\n", __FILE__, __func__);
         return -1;
     }
     
-    // 2. 注册UART插件
+    // 3. 注册UART插件
     simulator_plugin_t *uart_plugin = create_uart_plugin();
     if (!uart_plugin || register_plugin(uart_plugin) != 0) {
         printf("[%s:%s] Failed to register UART plugin\n", __FILE__, __func__);
         return -1;
     }
     
-    // 3. 设置UART寄存器映射
+    // 4. 设置UART寄存器映射
     if (add_register_mapping(0x40001000, 0x40001050, "uart") != 0) {
         printf("[%s:%s] Failed to add UART register mapping\n", __FILE__, __func__);
         return -1;
     }
     
-    // 4. 设置UART中断信号映射（使用实时信号，避免与系统默认信号冲突）
+    // 5. 设置UART中断信号映射（使用实时信号，避免与系统默认信号冲突）
     if (add_signal_mapping(34, "uart", 5) != 0) {  // SIGRTMIN
         printf("[%s:%s] Failed to add UART TX signal mapping\n", __FILE__, __func__);
         return -1;
@@ -98,18 +105,19 @@ int main(void) {
         return -1;
     }
     
-    // 5. 初始化UART驱动
+    // 6. 初始化UART驱动
     if (uart_init() != 0) {
         printf("[%s:%s] Failed to initialize UART driver\n", __FILE__, __func__);
         return -1;
     }
     
-    // 6. 运行测试用例
+    // 7. 运行测试用例
     test_uart_basic();
     test_uart_interrupt();
     
-    // 7. 清理资源
+    // 8. 清理资源
     uart_cleanup();
+    interrupt_manager_cleanup();
     sim_interface_cleanup();
     
     printf("[%s:%s] IC Simulator Test Completed Successfully!\n", __FILE__, __func__);

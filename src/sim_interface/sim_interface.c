@@ -3,6 +3,7 @@
 
 #include "sim_interface.h"
 #include "../simulator/plugin_interface.h"
+#include "../driver/interrupt_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,19 +118,16 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
 
 // 信号处理器（用于中断）
 static void interrupt_signal_handler(int sig) {
+    printf("[%s:%s] Interrupt signal %d received.\n", __FILE__, __func__, sig);
+
     for (int i = 0; i < g_signal_mapping_count; i++) {
         if (g_signal_mappings[i].signal_num == sig) {
             signal_mapping_t *mapping = &g_signal_mappings[i];
             printf("[%s:%s] Interrupt signal %d received for module %s (IRQ %d)\n", 
                    __FILE__, __func__, sig, mapping->module, mapping->irq_num);
             
-            sim_message_t msg = {0};
-            msg.type = MSG_INTERRUPT;
-            strcpy(msg.module, mapping->module);
-            msg.data.interrupt.irq_num = mapping->irq_num;
-            msg.id = g_msg_id_counter++;
-            
-            handle_sim_message(&msg, NULL);
+            // 使用interrupt_manager处理中断
+            handle_interrupt(mapping->irq_num);
             break;
         }
     }

@@ -11,13 +11,13 @@ BIN_DIR = bin
 
 # 源文件
 COMMON_SRCS = $(SRC_DIR)/common/protocol.h
-DRIVER_SRCS = $(SRC_DIR)/driver/uart_driver.c
+DRIVER_SRCS = $(SRC_DIR)/driver/uart_driver.c $(SRC_DIR)/driver/interrupt_manager.c
 SIM_INTERFACE_SRCS = $(SRC_DIR)/sim_interface/sim_interface.c
 SIMULATOR_SRCS = $(SRC_DIR)/simulator/plugin_manager.c $(SRC_DIR)/simulator/plugins/uart_plugin.c
 MAIN_SRC = $(SRC_DIR)/main.c
 
 # 目标文件
-OBJS = $(BUILD_DIR)/uart_driver.o $(BUILD_DIR)/sim_interface.o $(BUILD_DIR)/plugin_manager.o $(BUILD_DIR)/uart_plugin.o $(BUILD_DIR)/main.o
+OBJS = $(BUILD_DIR)/uart_driver.o $(BUILD_DIR)/interrupt_manager.o $(BUILD_DIR)/sim_interface.o $(BUILD_DIR)/plugin_manager.o $(BUILD_DIR)/uart_plugin.o $(BUILD_DIR)/main.o
 
 # 可执行文件
 TARGET = $(BIN_DIR)/ic_simulator
@@ -34,6 +34,9 @@ $(BIN_DIR):
 
 # 编译目标文件
 $(BUILD_DIR)/uart_driver.o: $(SRC_DIR)/driver/uart_driver.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -c $< -o $@
+
+$(BUILD_DIR)/interrupt_manager.o: $(SRC_DIR)/driver/interrupt_manager.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(SRC_DIR) -c $< -o $@
 
 $(BUILD_DIR)/sim_interface.o: $(SRC_DIR)/sim_interface/sim_interface.c | $(BUILD_DIR)
