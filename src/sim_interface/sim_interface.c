@@ -56,7 +56,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
         exit(1);
     }
     else {
-        printf("[%s:%s] Segfault at address: %p in module %s\n", __FILE__, __func__, fault_addr, mapping->module);
+        //printf("[%s:%s] Segfault at address: %p in module %s\n", __FILE__, __func__, fault_addr, mapping->module);
     }
 
     sim_message_t msg = {0};
@@ -73,7 +73,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
     if (insn[0] == 0x8B) {               // 8b 00  mov    (%rax),%eax - 读操作
         msg.type = MSG_REG_READ;
 
-        printf("[%s:%s] Register read start: addr=0x%08X\n", __FILE__, __func__, msg.address);
+        //printf("[%s:%s] Register read start: addr=0x%08X\n", __FILE__, __func__, msg.address);
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register read completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
             
@@ -89,7 +89,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
         msg.value = uc->uc_mcontext.gregs[REG_RAX];
         msg.type = MSG_REG_WRITE;
 
-        printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
+        //printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register write completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
         } else {
@@ -102,7 +102,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
         msg.value = *(uint32_t *)(rip + 2);
         msg.type = MSG_REG_WRITE;
 
-        printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
+        //printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register write completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
         } else {
@@ -118,7 +118,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
 
 // 信号处理器（用于中断）
 static void interrupt_signal_handler(int sig) {
-    printf("[%s:%s] Interrupt signal %d received.\n", __FILE__, __func__, sig);
+    //printf("[%s:%s] Interrupt signal %d received.\n", __FILE__, __func__, sig);
 
     for (int i = 0; i < g_signal_mapping_count; i++) {
         if (g_signal_mappings[i].signal_num == sig) {
