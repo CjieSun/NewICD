@@ -356,4 +356,22 @@ typedef enum {
 /* Maximum delay for HAL operations */
 #define HAL_MAX_DELAY      0xFFFFFFFFU
 
+/* HAL Lock/Unlock macros */
+#define __HAL_LOCK(__HANDLE__)                                           \
+                                do{                                        \
+                                    if((__HANDLE__)->Lock == HAL_LOCKED)   \
+                                    {                                      \
+                                       return HAL_BUSY;                    \
+                                    }                                      \
+                                    else                                   \
+                                    {                                      \
+                                       (__HANDLE__)->Lock = HAL_LOCKED;    \
+                                    }                                      \
+                                  }while (0U)
+
+#define __HAL_UNLOCK(__HANDLE__)                                          \
+                                  do{                                       \
+                                      (__HANDLE__)->Lock = HAL_UNLOCKED;    \
+                                    }while (0U)
+
 #endif // REGISTER_MAP_H
