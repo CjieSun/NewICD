@@ -1,4 +1,5 @@
 #include "../plugin_interface.h"
+#include "../../common/register_map.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,15 +9,8 @@
 // 声明外部函数
 extern int trigger_interrupt(const char *module, uint32_t irq_num);
 
-// UART寄存器定义
-#define UART_TX_REG     0x40001000
-#define UART_RX_REG     0x40001004
-#define UART_STATUS_REG 0x40001008
-#define UART_CTRL_REG   0x4000100C
-
-// UART状态位
-#define UART_TX_READY   (1 << 0)
-#define UART_RX_READY   (1 << 1)
+// 前向声明
+static simulator_plugin_t* create_uart_plugin_instance(const char *instance_name, int instance_id);
 
 // UART私有数据
 typedef struct {
@@ -24,6 +18,7 @@ typedef struct {
     uint32_t rx_reg;
     uint32_t status_reg;
     uint32_t ctrl_reg;
+    uint32_t dma_ctrl_reg;  // DMA控制寄存器
     bool tx_ready;
     bool rx_ready;
     uint8_t rx_buffer[256];
@@ -31,6 +26,11 @@ typedef struct {
     bool interrupt_enabled;
     bool simulation_running;
     pthread_t monitor_thread;
+    
+    // 实例标识和地址配置
+    int instance_id;
+    char instance_name[32];
+    uint32_t base_addr;        // 实例基地址
 } uart_private_t;
 
 // UART状态监控线程
@@ -38,7 +38,7 @@ static void* uart_monitor_thread(void *arg) {
     simulator_plugin_t *plugin = (simulator_plugin_t*)arg;
     uart_private_t *priv = (uart_private_t*)plugin->private_data;
     
-    printf("[uart_plugin.c:%s] UART monitor thread started\n", __func__);
+    printf("[uart_plugin.c:%s] %s UART monitor thread started\n", __func__, priv->instance_name);
     
     int cycle_count = 0;
     while (priv->simulation_running) {
@@ -48,18 +48,19 @@ static void* uart_monitor_thread(void *arg) {
         if (priv->interrupt_enabled && priv->ctrl_reg & 0x01) {
             // 每5秒模拟一次接收数据
             if (cycle_count % 5 == 0 && priv->rx_head == priv->rx_tail) {
-                printf("[uart_plugin.c:%s] Simulating RX data available (cycle %d)\n", __func__, cycle_count);
+                printf("[uart_plugin.c:%s] %s simulating RX data available (cycle %d)\n", 
+                       __func__, priv->instance_name, cycle_count);
                 priv->rx_buffer[priv->rx_head] = 0x41 + (cycle_count / 5 - 1) % 26;  // 模拟接收字符A-Z循环
                 priv->rx_head = (priv->rx_head + 1) % 256;
                 priv->status_reg |= UART_RX_READY;
                 
                 // 触发接收中断
-                trigger_interrupt("uart", 6);
+                trigger_interrupt(priv->instance_name, 6);
             }
         }
     }
     
-    printf("[uart_plugin.c:%s] UART monitor thread stopped\n", __func__);
+    printf("[uart_plugin.c:%s] %s UART monitor thread stopped\n", __func__, priv->instance_name);
     return NULL;
 }
 
@@ -93,6 +94,7 @@ static int uart_reset(simulator_plugin_t *plugin, reset_action_t action) {
         priv->rx_reg = 0;
         priv->status_reg = UART_TX_READY;  // 复位后发送就绪
         priv->ctrl_reg = 0;
+        priv->dma_ctrl_reg = 0;  // 复位DMA控制寄存器
         priv->tx_ready = true;
         priv->rx_ready = false;
         priv->rx_head = priv->rx_tail = 0;
@@ -106,26 +108,32 @@ static int uart_reset(simulator_plugin_t *plugin, reset_action_t action) {
 static uint32_t uart_reg_read(simulator_plugin_t *plugin, uint32_t address) {
     uart_private_t *priv = (uart_private_t*)plugin->private_data;
     
-    switch (address) {
-        case UART_TX_REG:
+    // 转换为相对地址
+    uint32_t relative_addr = address - priv->base_addr;
+    
+    switch (relative_addr) {
+        case 0x00:  // UART_TX_REG offset
             return priv->tx_reg;
-        case UART_RX_REG:
+        case 0x04:  // UART_RX_REG offset
             if (priv->rx_head != priv->rx_tail) {
                 uint8_t data = priv->rx_buffer[priv->rx_tail];
                 priv->rx_tail = (priv->rx_tail + 1) % 256;
                 if (priv->rx_head == priv->rx_tail) {
                     priv->status_reg &= ~UART_RX_READY;
                 }
-                printf("[uart_plugin.c:%s] UART read: 0x%02X\n", __func__, data);
+                printf("[uart_plugin.c:%s] %s UART read: 0x%02X\n", __func__, priv->instance_name, data);
                 return data;
             }
             return 0;
-        case UART_STATUS_REG:
+        case 0x08:  // UART_STATUS_REG offset
             return priv->status_reg;
-        case UART_CTRL_REG:
+        case 0x0C:  // UART_CTRL_REG offset
             return priv->ctrl_reg;
+        case 0x10:  // UART_DMA_CTRL_REG offset
+            return priv->dma_ctrl_reg;
         default:
-            printf("[uart_plugin.c:%s] UART: Invalid read address 0x%08X\n", __func__, address);
+            printf("[uart_plugin.c:%s] %s UART: Invalid read address 0x%08X (relative: 0x%08X)\n", 
+                   __func__, priv->instance_name, address, relative_addr);
             return 0;
     }
 }
@@ -134,28 +142,35 @@ static uint32_t uart_reg_read(simulator_plugin_t *plugin, uint32_t address) {
 static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t value) {
     uart_private_t *priv = (uart_private_t*)plugin->private_data;
     
-    switch (address) {
-        case UART_TX_REG:
+    // 转换为相对地址
+    uint32_t relative_addr = address - priv->base_addr;
+    
+    switch (relative_addr) {
+        case 0x00:  // UART_TX_REG offset
             priv->tx_reg = value;
-            printf("[uart_plugin.c:%s] UART transmit: 0x%02X ('%c')\n", __func__, value & 0xFF, 
+            printf("[uart_plugin.c:%s] %s UART transmit: 0x%02X ('%c')\n", 
+                   __func__, priv->instance_name, value & 0xFF, 
                    (value >= 32 && value < 127) ? (char)value : '.');
             // 模拟发送完成，触发TX完成中断
             if (priv->interrupt_enabled && priv->ctrl_reg & 0x01) {
-                printf("[uart_plugin.c:%s] UART: TX complete interrupt triggered\n", __func__);
-                trigger_interrupt("uart", 5);
+                printf("[uart_plugin.c:%s] %s UART: TX complete interrupt triggered\n", 
+                       __func__, priv->instance_name);
+                trigger_interrupt(priv->instance_name, 5);
             }
             break;
-        case UART_RX_REG:
+        case 0x04:  // UART_RX_REG offset
             // RX寄存器通常是只读的
-            printf("[%s:%s] UART: Warning - write to RX register\n", __FILE__, __func__);
+            printf("[uart_plugin.c:%s] %s UART: Warning - write to RX register\n", 
+                   __func__, priv->instance_name);
             break;
-        case UART_STATUS_REG:
+        case 0x08:  // UART_STATUS_REG offset
             // 状态寄存器可能部分可写（清除标志位）
             priv->status_reg = value;
             break;
-        case UART_CTRL_REG:
+        case 0x0C:  // UART_CTRL_REG offset
             priv->ctrl_reg = value;
-            printf("[%s:%s] UART control register set: 0x%08X\n", __FILE__, __func__, value);
+            printf("[uart_plugin.c:%s] %s UART control register set: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
             
             // 如果UART被启用，启动监控线程
             if ((value & 0x01) && !priv->interrupt_enabled) {
@@ -163,9 +178,11 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                 priv->simulation_running = true;
                 
                 if (pthread_create(&priv->monitor_thread, NULL, uart_monitor_thread, plugin) == 0) {
-                    printf("[%s:%s] UART monitor thread started\n", __FILE__, __func__);
+                    printf("[uart_plugin.c:%s] %s UART monitor thread started\n", 
+                           __func__, priv->instance_name);
                 } else {
-                    printf("[%s:%s] Failed to create UART monitor thread\n", __FILE__, __func__);
+                    printf("[uart_plugin.c:%s] %s Failed to create UART monitor thread\n", 
+                           __func__, priv->instance_name);
                     priv->interrupt_enabled = false;
                     priv->simulation_running = false;
                 }
@@ -174,11 +191,28 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                 priv->simulation_running = false;
                 priv->interrupt_enabled = false;
                 pthread_join(priv->monitor_thread, NULL);
-                printf("[%s:%s] UART monitor thread stopped\n", __FILE__, __func__);
+                printf("[uart_plugin.c:%s] %s UART monitor thread stopped\n", 
+                       __func__, priv->instance_name);
+            }
+            break;
+        case 0x10:  // UART_DMA_CTRL_REG offset
+            priv->dma_ctrl_reg = value;
+            printf("[uart_plugin.c:%s] %s UART DMA control register set: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            
+            // 处理DMA控制逻辑
+            if (value & UART_DMA_TX_ENABLE) {
+                printf("[uart_plugin.c:%s] %s UART DMA TX enabled\n", 
+                       __func__, priv->instance_name);
+            }
+            if (value & UART_DMA_RX_ENABLE) {
+                printf("[uart_plugin.c:%s] %s UART DMA RX enabled\n", 
+                       __func__, priv->instance_name);
             }
             break;
         default:
-            printf("[%s:%s] UART: Invalid write address 0x%08X\n", __FILE__, __func__, address);
+            printf("[uart_plugin.c:%s] %s UART: Invalid write address 0x%08X (relative: 0x%08X)\n", 
+                   __func__, priv->instance_name, address, relative_addr);
             return -1;
     }
     return 0;
@@ -186,7 +220,9 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
 
 // UART中断处理
 static int uart_interrupt(simulator_plugin_t *plugin, uint32_t irq_num) {
-    printf("[%s:%s] UART interrupt %d triggered\n", __FILE__, __func__, irq_num);
+    uart_private_t *priv = (uart_private_t*)plugin->private_data;
+    printf("[uart_plugin.c:%s] %s UART interrupt %d triggered\n", 
+           __func__, priv->instance_name, irq_num);
     return 0;
 }
 
@@ -200,11 +236,27 @@ static int uart_init(simulator_plugin_t *plugin) {
     memset(priv, 0, sizeof(uart_private_t));
     priv->status_reg = UART_TX_READY;  // 初始状态发送就绪
     priv->tx_ready = true;
+    priv->dma_ctrl_reg = 0;  // 初始化DMA控制寄存器
     priv->interrupt_enabled = false;
     priv->simulation_running = false;
     
+    // 设置实例信息
+    strncpy(priv->instance_name, plugin->name, sizeof(priv->instance_name) - 1);
+    
+    // 从插件名解析实例ID，或使用默认ID
+    if (sscanf(plugin->name, "uart%d", &priv->instance_id) != 1) {
+        priv->instance_id = 0;  // 默认ID
+    }
+    
+    // 计算基地址：UART基地址 = UART_BASE + (instance_id * 0x1000)
+    priv->base_addr = UART_BASE + (priv->instance_id * 0x1000);
+    
+    printf("[uart_plugin.c:%s] %s configured with base addr 0x%08X\n", 
+           __func__, priv->instance_name, priv->base_addr);
+    
     plugin->private_data = priv;
-    printf("[%s:%s] UART plugin initialized\n", __FILE__, __func__);
+    printf("[uart_plugin.c:%s] %s UART plugin initialized\n", 
+           __func__, priv->instance_name);
     return 0;
 }
 
@@ -217,23 +269,37 @@ static void uart_cleanup(simulator_plugin_t *plugin) {
         if (priv->simulation_running) {
             priv->simulation_running = false;
             pthread_join(priv->monitor_thread, NULL);
-            printf("[%s:%s] UART monitor thread joined\n", __FILE__, __func__);
+            printf("[uart_plugin.c:%s] %s UART monitor thread joined\n", 
+                   __func__, priv->instance_name);
         }
         
         free(plugin->private_data);
         plugin->private_data = NULL;
     }
-    printf("[%s:%s] UART plugin cleaned up\n", __FILE__, __func__);
+    printf("[uart_plugin.c:%s] UART plugin cleaned up\n", __func__);
 }
 
 // 创建UART插件实例
 simulator_plugin_t* create_uart_plugin(void) {
+    return create_uart_plugin_instance("uart0", 0);
+}
+
+// 创建UART插件实例 - 支持多实例
+static simulator_plugin_t* create_uart_plugin_instance(const char *instance_name, int instance_id) {
     simulator_plugin_t *plugin = malloc(sizeof(simulator_plugin_t));
     if (!plugin) {
         return NULL;
     }
     
-    strcpy(plugin->name, "uart");
+    memset(plugin, 0, sizeof(simulator_plugin_t));
+    
+    // 设置实例名称
+    if (instance_name) {
+        strncpy(plugin->name, instance_name, sizeof(plugin->name) - 1);
+    } else {
+        snprintf(plugin->name, sizeof(plugin->name), "uart%d", instance_id);
+    }
+    
     plugin->clock = uart_clock;
     plugin->reset = uart_reset;
     plugin->reg_read = uart_reg_read;
@@ -243,5 +309,35 @@ simulator_plugin_t* create_uart_plugin(void) {
     plugin->cleanup = uart_cleanup;
     plugin->private_data = NULL;
     
+    printf("[uart_plugin.c:%s] UART plugin '%s' created\n", __func__, plugin->name);
     return plugin;
+}
+
+// 创建具有指定基地址的UART插件实例
+simulator_plugin_t* create_uart_plugin_with_base_addr(const char *instance_name, int instance_id, uint32_t base_addr) {
+    simulator_plugin_t *plugin = create_uart_plugin_instance(instance_name, instance_id);
+    if (!plugin) {
+        return NULL;
+    }
+    
+    // 初始化插件以设置私有数据
+    if (plugin->init && plugin->init(plugin) != 0) {
+        free(plugin);
+        return NULL;
+    }
+    
+    // 覆盖自动计算的基地址
+    uart_private_t *priv = (uart_private_t*)plugin->private_data;
+    priv->base_addr = base_addr;
+    priv->instance_id = instance_id;
+    
+    printf("[uart_plugin.c:%s] %s UART configured with custom base addr 0x%08X\n", 
+           __func__, instance_name, base_addr);
+    
+    return plugin;
+}
+
+// 创建多实例UART插件
+simulator_plugin_t* create_uart_plugin_multi_instance(const char *instance_name, int instance_id) {
+    return create_uart_plugin_instance(instance_name, instance_id);
 }

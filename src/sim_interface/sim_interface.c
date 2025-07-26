@@ -3,9 +3,10 @@
 
 #include "sim_interface.h"
 #include "../simulator/plugin_interface.h"
-#include "../driver/interrupt_manager.h"
+#include "interrupt_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/mman.h>
@@ -63,7 +64,7 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
     sim_message_t response = {0};
     
     strcpy(msg.module, mapping->module);
-    msg.address = fault_addr;
+    msg.address = (uintptr_t)fault_addr;
     msg.id = g_msg_id_counter++;
 
     // 获取当前指令指针和指令内容
