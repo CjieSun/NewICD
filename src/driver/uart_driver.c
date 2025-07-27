@@ -19,13 +19,15 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
+#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
+
 #include "uart_driver.h"
 #include "../common/register_map.h"
 #include "../sim_interface/interrupt_manager.h"
 #include "dma_driver.h"
 #include <stdio.h>
 #include <stdint.h>
-#include <unistd.h>  /* for usleep */
 
 #ifdef _WIN32
     #include <windows.h>
@@ -1186,6 +1188,53 @@ __weak void HAL_UART_AbortReceiveCpltCallback(UART_HandleTypeDef *huart)
              the HAL_UART_AbortReceiveCpltCallback could be implemented in the user file
      */
     printf("[%s:%s] UART abort receive completion callback\n", __FILE__, __func__);
+}
+
+/**
+  * @brief  DMA transmit complete callback.
+  * @param  huart UART handle.
+  * @retval None
+  */
+static void UART_DMATransmitCplt(UART_HandleTypeDef *huart)
+{
+    /* Prevent unused argument(s) compilation warning */
+    UNUSED(huart);
+
+    printf("[%s:%s] UART DMA transmit completion callback\n", __FILE__, __func__);
+    /* Set transmission state to ready */
+    huart->gState = HAL_UART_STATE_READY;
+}
+
+/**
+  * @brief  DMA receive complete callback.
+  * @param  huart UART handle.
+  * @retval None
+  */
+static void UART_DMAReceiveCplt(UART_HandleTypeDef *huart)
+{
+    /* Prevent unused argument(s) compilation warning */
+    UNUSED(huart);
+
+    printf("[%s:%s] UART DMA receive completion callback\n", __FILE__, __func__);
+    /* Set reception state to ready */
+    huart->RxState = HAL_UART_STATE_READY;
+}
+
+/**
+  * @brief  DMA error callback.
+  * @param  huart UART handle.
+  * @retval None
+  */
+static void UART_DMAError(UART_HandleTypeDef *huart)
+{
+    /* Prevent unused argument(s) compilation warning */
+    UNUSED(huart);
+
+    printf("[%s:%s] UART DMA error callback\n", __FILE__, __func__);
+    /* Set error state */
+    huart->ErrorCode |= HAL_UART_ERROR_DMA;
+    huart->gState = HAL_UART_STATE_READY;
+    huart->RxState = HAL_UART_STATE_READY;
 }
 
 /**

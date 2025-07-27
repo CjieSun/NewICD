@@ -35,10 +35,17 @@ static uint32_t g_msg_id_counter = 1;
 
 // 查找寄存器映射
 static reg_mapping_t* find_register_mapping(void *addr) {
+    uintptr_t physical_addr = (uintptr_t)addr;
+    
+    printf("[%s:%s] Looking for mapping for address 0x%lx\n", __FILE__, __func__, physical_addr);
+    
     for (int i = 0; i < g_reg_mapping_count; i++) {
         reg_mapping_t *mapping = &g_reg_mappings[i];
-        if (addr >= mapping->start_addr && 
-            addr < (char*)mapping->start_addr + (mapping->end_addr - mapping->start_addr)) {
+        printf("[%s:%s] Checking mapping %d: %s [0x%08x-0x%08x]\n", 
+               __FILE__, __func__, i, mapping->module, mapping->start_addr, mapping->end_addr);
+        if (physical_addr >= mapping->start_addr && 
+            physical_addr < mapping->end_addr) {
+            printf("[%s:%s] Found mapping: %s\n", __FILE__, __func__, mapping->module);
             return mapping;
         }
     }
