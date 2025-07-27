@@ -52,7 +52,7 @@ static void* uart_monitor_thread(void *arg) {
                        __func__, priv->instance_name, cycle_count);
                 priv->rx_buffer[priv->rx_head] = 0x41 + (cycle_count / 5 - 1) % 26;  // 模拟接收字符A-Z循环
                 priv->rx_head = (priv->rx_head + 1) % 256;
-                priv->status_reg |= UART_RX_READY;
+                priv->status_reg |= (~UART_FR_RXFE);
                 
                 // 触发接收中断
                 trigger_interrupt(priv->instance_name, 6);
@@ -72,7 +72,7 @@ static int uart_clock(simulator_plugin_t *plugin, clock_action_t action, uint32_
         case CLOCK_TICK:
             // 模拟时钟周期，可以在这里更新UART状态
             priv->tx_ready = true;  // 简化处理，假设发送总是就绪
-            priv->status_reg |= UART_TX_READY;
+            priv->status_reg |= (~UART_FR_TXFF);
             break;
         case CLOCK_ENABLE:
             printf("[uart_plugin.c:%s] UART clock enabled\n", __func__);
@@ -92,7 +92,7 @@ static int uart_reset(simulator_plugin_t *plugin, reset_action_t action) {
         printf("[uart_plugin.c:%s] UART reset asserted\n", __func__);
         priv->tx_reg = 0;
         priv->rx_reg = 0;
-        priv->status_reg = UART_TX_READY;  // 复位后发送就绪
+        priv->status_reg = (~UART_FR_TXFF);  // 复位后发送就绪
         priv->ctrl_reg = 0;
         priv->dma_ctrl_reg = 0;  // 复位DMA控制寄存器
         priv->tx_ready = true;
@@ -119,7 +119,7 @@ static uint32_t uart_reg_read(simulator_plugin_t *plugin, uint32_t address) {
                 uint8_t data = priv->rx_buffer[priv->rx_tail];
                 priv->rx_tail = (priv->rx_tail + 1) % 256;
                 if (priv->rx_head == priv->rx_tail) {
-                    priv->status_reg &= ~UART_RX_READY;
+                    priv->status_reg &= ~(~UART_FR_RXFE);
                 }
                 printf("[uart_plugin.c:%s] %s UART read: 0x%02X\n", __func__, priv->instance_name, data);
                 return data;
@@ -201,11 +201,11 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                    __func__, priv->instance_name, value);
             
             // 处理DMA控制逻辑
-            if (value & UART_DMA_TX_ENABLE) {
+            if (value & UART_DMACR_TXDMAE) {
                 printf("[uart_plugin.c:%s] %s UART DMA TX enabled\n", 
                        __func__, priv->instance_name);
             }
-            if (value & UART_DMA_RX_ENABLE) {
+            if (value & UART_DMACR_RXDMAE) {
                 printf("[uart_plugin.c:%s] %s UART DMA RX enabled\n", 
                        __func__, priv->instance_name);
             }
@@ -234,7 +234,7 @@ static int uart_init(simulator_plugin_t *plugin) {
     }
     
     memset(priv, 0, sizeof(uart_private_t));
-    priv->status_reg = UART_TX_READY;  // 初始状态发送就绪
+    priv->status_reg = (~UART_FR_TXFF);  // 初始状态发送就绪
     priv->tx_ready = true;
     priv->dma_ctrl_reg = 0;  // 初始化DMA控制寄存器
     priv->interrupt_enabled = false;
@@ -249,7 +249,7 @@ static int uart_init(simulator_plugin_t *plugin) {
     }
     
     // 计算基地址：UART基地址 = UART_BASE + (instance_id * 0x1000)
-    priv->base_addr = UART_BASE + (priv->instance_id * 0x1000);
+    priv->base_addr = UART0_BASE + (priv->instance_id * 0x1000);
     
     printf("[uart_plugin.c:%s] %s configured with base addr 0x%08X\n", 
            __func__, priv->instance_name, priv->base_addr);

@@ -488,12 +488,11 @@ static HAL_StatusTypeDef UART_CheckIdleState(UART_HandleTypeDef *huart)
   * @{
   */
 
-/* UART register access macros for legacy support */
-#define UART_TX_REG_PTR         ((volatile uint32_t*)UART_TX_REG)
-#define UART_RX_REG_PTR         ((volatile uint32_t*)UART_RX_REG)
-#define UART_STATUS_REG_PTR     ((volatile uint32_t*)UART_STATUS_REG)
-#define UART_CTRL_REG_PTR       ((volatile uint32_t*)UART_CTRL_REG)
-#define UART_DMA_CTRL_REG_PTR   ((volatile uint32_t*)UART_DMA_CTRL_REG)
+/* UART register access using CMSIS-style interfaces */
+#define UART_DR_PTR         (&(UART0->DR))
+#define UART_FR_PTR         (&(UART0->FR))
+#define UART_CR_PTR         (&(UART0->CR))
+#define UART_DMACR_PTR      (&(UART0->DMACR))
 
 /* HAL_GetTick simulation for timeout handling */
 #ifndef HAL_MAX_DELAY
@@ -586,7 +585,7 @@ static void uart_dma_rx_callback(uint8_t channel, dma_channel_status_t status) {
     if (status == DMA_CH_DONE) {
         g_uart_dma_rx.completed = true;
         /* 禁用UART DMA接收 */
-        *UART_DMA_CTRL_REG_PTR &= ~UART_DMA_RX_ENABLE;
+        *UART_DMACR_PTR &= ~UART_DMACR_RXDMAE;
         
         /* Call HAL callback */
         if (g_UartHandle.Instance != NULL) {
@@ -660,7 +659,7 @@ int uart_init(void)
 void uart_cleanup(void)
 {
     /* 禁用UART */
-    *UART_CTRL_REG_PTR = 0x00;
+    *UART_CR_PTR = 0x00;
     
     /* 清理DMA */
     uart_dma_cleanup();
@@ -712,7 +711,7 @@ void uart_dma_cleanup(void)
     }
     
     /* 禁用DMA */
-    *UART_DMA_CTRL_REG_PTR = 0;
+    *UART_DMACR_PTR = 0;
     
     /* 释放DMA通道 */
     if (g_uart_dma_tx.dma_channel >= 0) {
@@ -747,12 +746,12 @@ int uart_send_byte(uint8_t data)
     
     /* Fallback to direct register access */
     /* 等待发送就绪 */
-    while ((*UART_STATUS_REG_PTR & UART_TX_READY) == 0) {
+    while ((*UART_FR_PTR & UART_FR_TXFF) != 0) {
         usleep(1000);  /* 等待1ms */
     }
     
     /* 写入发送寄存器 */
-    *UART_TX_REG_PTR = data;
+    *UART_DR_PTR = data;
     
     /* 等待发送完成中断（可选） */
     uart_tx_complete = 0;
@@ -791,15 +790,15 @@ int uart_receive_byte(uint8_t *data)
         /* 先检查中断标志 */
         if (uart_rx_available) {
             /* 读取接收寄存器 */
-            *data = (uint8_t)(*UART_RX_REG_PTR & 0xFF);
+            *data = (uint8_t)(*UART_DR_PTR & 0xFF);
             uart_rx_available = 0;  /* 清除中断标志 */
             return 0;
         }
         
         /* 然后检查状态寄存器（只检查一次） */
-        if ((*UART_STATUS_REG_PTR & UART_RX_READY) != 0) {
+        if ((*UART_FR_PTR & UART_FR_RXFE) == 0) {
             /* 读取接收寄存器 */
-            *data = (uint8_t)(*UART_RX_REG_PTR & 0xFF);
+            *data = (uint8_t)(*UART_DR_PTR & 0xFF);
             return 0;
         }
         
@@ -917,17 +916,17 @@ int uart_dma_receive(uint8_t *buffer, uint32_t size)
     g_uart_dma_rx.completed = false;
     
     /* 启用UART DMA接收 */
-    *UART_DMA_CTRL_REG_PTR |= UART_DMA_RX_ENABLE;
+    *UART_DMACR_PTR |= UART_DMACR_RXDMAE;
     
     /* 启动DMA传输 (外设到内存) */
     if (dma_transfer_async(g_uart_dma_rx.dma_channel,
-                          UART_RX_REG,
+                          (uint32_t)UART_DR_PTR,
                           (uintptr_t)buffer,
                           size,
                           DMA_TRANSFER_PER_TO_MEM,
                           uart_dma_rx_callback) != 0) {
         printf("[%s:%s] Failed to start DMA RX transfer\n", __FILE__, __func__);
-        *UART_DMA_CTRL_REG_PTR &= ~UART_DMA_RX_ENABLE;
+        *UART_DMACR_PTR &= ~UART_DMACR_RXDMAE;
         return -1;
     }
     

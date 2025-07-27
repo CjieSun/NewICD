@@ -88,18 +88,27 @@
   * @{
   */
 
-/* DMA register access macros for legacy support */
-#define DMA_GLOBAL_CTRL_PTR     ((volatile uint32_t*)DMA_GLOBAL_CTRL_REG)
-#define DMA_GLOBAL_STATUS_PTR   ((volatile uint32_t*)DMA_GLOBAL_STATUS_REG)
-#define DMA_INT_STATUS_PTR      ((volatile uint32_t*)DMA_INT_STATUS_REG)
-#define DMA_INT_CLEAR_PTR       ((volatile uint32_t*)DMA_INT_CLEAR_REG)
+/* DMA register access using CMSIS-style interfaces */
+#define DMA_GLOBAL_CTRL_PTR     (&(DMA0->Configuration))
+#define DMA_GLOBAL_STATUS_PTR   (&(DMA0->IntStatus))
+#define DMA_INT_STATUS_PTR      (&(DMA0->IntStatus))
+#define DMA_INT_CLEAR_PTR       (&(DMA0->IntTCClear))
 
-#define DMA_CH_CTRL_PTR(ch)     ((volatile uint32_t*)DMA_CH_CTRL_REG(ch))
-#define DMA_CH_STATUS_PTR(ch)   ((volatile uint32_t*)DMA_CH_STATUS_REG(ch))
-#define DMA_CH_SRC_PTR(ch)      ((volatile uint32_t*)DMA_CH_SRC_REG(ch))
-#define DMA_CH_DST_PTR(ch)      ((volatile uint32_t*)DMA_CH_DST_REG(ch))
-#define DMA_CH_SIZE_PTR(ch)     ((volatile uint32_t*)DMA_CH_SIZE_REG(ch))
-#define DMA_CH_CONFIG_PTR(ch)   ((volatile uint32_t*)DMA_CH_CONFIG_REG(ch))
+/* Helper function to get DMA channel instance by index */
+static DMA_Channel_TypeDef* get_dma_channel(uint8_t ch) {
+    static DMA_Channel_TypeDef* channels[DMA_MAX_CHANNELS] = {
+        DMA0_Channel0, DMA0_Channel1, DMA0_Channel2, DMA0_Channel3,
+        DMA0_Channel4, DMA0_Channel5, DMA0_Channel6, DMA0_Channel7
+    };
+    return (ch < DMA_MAX_CHANNELS) ? channels[ch] : NULL;
+}
+
+#define DMA_CH_CTRL_PTR(ch)     (&(get_dma_channel(ch)->Control))
+#define DMA_CH_STATUS_PTR(ch)   (&(get_dma_channel(ch)->Configuration))
+#define DMA_CH_SRC_PTR(ch)      (&(get_dma_channel(ch)->SrcAddr))
+#define DMA_CH_DST_PTR(ch)      (&(get_dma_channel(ch)->DestAddr))
+#define DMA_CH_SIZE_PTR(ch)     (&(get_dma_channel(ch)->Control))
+#define DMA_CH_CONFIG_PTR(ch)   (&(get_dma_channel(ch)->Configuration))
 
 /* Legacy DMA channel management structure */
 typedef struct {

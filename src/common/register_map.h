@@ -265,6 +265,48 @@ typedef struct {
 #define DMA0_Channel6     ((DMA_Channel_TypeDef *) DMA0_Channel6_BASE)
 #define DMA0_Channel7     ((DMA_Channel_TypeDef *) DMA0_Channel7_BASE)
 
+/* DMA Configuration Constants */
+#define DMA_MAX_CHANNELS        8
+
+/* ================================================================================ */
+/* ================       Simulator Plugin Compatibility       ================== */
+/* ================================================================================ */
+/* NOTE: These definitions are for simulator plugins only and should not be used */
+/* in driver code. All driver code should use the CMSIS-style interfaces above. */
+
+/* Simulator-only UART definitions */
+#define UART_BASE           UART0_BASE
+#define UART_DMA_CTRL_REG   (UART_BASE + 0x48)  /* Same as DMACR register */
+#define UART_DMA_TX_ENABLE  UART_DMACR_TXDMAE
+#define UART_DMA_RX_ENABLE  UART_DMACR_RXDMAE
+
+/* Simulator-only DMA definitions */
+#define DMA_BASE_ADDR           DMA0_BASE
+#define DMA_GLOBAL_CTRL_REG     (DMA_BASE_ADDR + 0x30)  /* Configuration register */
+#define DMA_GLOBAL_STATUS_REG   (DMA_BASE_ADDR + 0x00)  /* IntStatus register */
+#define DMA_INT_STATUS_REG      (DMA_BASE_ADDR + 0x00)  /* IntStatus register */
+#define DMA_INT_CLEAR_REG       (DMA_BASE_ADDR + 0x008) /* IntTCClear register */
+#define DMA_CH_OFFSET           0x20
+#define DMA_CH_BASE_ADDR        (DMA_BASE_ADDR + 0x100)  /* Channel registers base */
+#define DMA_CH_CTRL_REG(ch)     (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x0C)
+#define DMA_CH_STATUS_REG(ch)   (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x10)
+#define DMA_CH_SRC_REG(ch)      (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x00)
+#define DMA_CH_DST_REG(ch)      (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x04)
+#define DMA_CH_SIZE_REG(ch)     (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x0C)
+#define DMA_CH_CONFIG_REG(ch)   (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x10)
+
+/* Simulator-only DMA channel structure */
+typedef struct {
+    uint32_t ctrl;
+    uint32_t status;
+    uint32_t src_addr;
+    uint32_t dst_addr;
+    uint32_t size;
+    uint32_t config;
+    uint32_t current_src;
+    uint32_t current_dst;
+} dma_channel_regs_t;
+
 /* =============================================== */
 /* ============ Peripheral Instances ============ */
 /* =============================================== */
@@ -285,51 +327,7 @@ typedef struct {
 #define __I               volatile const
 #endif
 
-/* Legacy support for backward compatibility */
-#define UART_BASE           UART0_BASE
-#define UART_TX_REG         (UART_BASE + 0x00)
-#define UART_RX_REG         (UART_BASE + 0x00)  /* Same as DR register */
-#define UART_STATUS_REG     (UART_BASE + 0x18)  /* Same as FR register */
-#define UART_CTRL_REG       (UART_BASE + 0x30)  /* Same as CR register */
-#define UART_DMA_CTRL_REG   (UART_BASE + 0x48)  /* Same as DMACR register */
 
-/* Legacy status bits */
-#define UART_TX_READY       (~UART_FR_TXFF)     /* TX not full */
-#define UART_RX_READY       (~UART_FR_RXFE)     /* RX not empty */
-
-/* Legacy DMA control bits */
-#define UART_DMA_TX_ENABLE  UART_DMACR_TXDMAE
-#define UART_DMA_RX_ENABLE  UART_DMACR_RXDMAE
-
-/* DMA legacy definitions */
-#define DMA_BASE_ADDR           DMA0_BASE
-#define DMA_GLOBAL_CTRL_REG     (DMA_BASE_ADDR + 0x30)  /* Configuration register */
-#define DMA_GLOBAL_STATUS_REG   (DMA_BASE_ADDR + 0x00)  /* IntStatus register */
-#define DMA_INT_STATUS_REG      (DMA_BASE_ADDR + 0x00)  /* IntStatus register */
-#define DMA_INT_CLEAR_REG       (DMA_BASE_ADDR + 0x008) /* IntTCClear register */
-#define DMA_MAX_CHANNELS        8
-#define DMA_CH_OFFSET           0x20
-#define DMA_CH_BASE_ADDR        (DMA_BASE_ADDR + 0x100)  /* Channel registers base */
-#define DMA_CH_CTRL_REG(ch)     (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x0C)
-#define DMA_CH_STATUS_REG(ch)   (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x10)
-#define DMA_CH_SRC_REG(ch)      (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x00)
-#define DMA_CH_DST_REG(ch)      (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x04)
-#define DMA_CH_SIZE_REG(ch)     (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x0C)
-#define DMA_CH_CONFIG_REG(ch)   (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x10)
-#define DMA_CH_CURRENT_SRC_REG(ch) (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x00)
-#define DMA_CH_CURRENT_DST_REG(ch) (DMA_CH_BASE_ADDR + (ch) * DMA_CH_OFFSET + 0x04)
-
-/* Legacy DMA channel structure */
-typedef struct {
-    uint32_t ctrl;
-    uint32_t status;
-    uint32_t src_addr;
-    uint32_t dst_addr;
-    uint32_t size;
-    uint32_t config;
-    uint32_t current_src;
-    uint32_t current_dst;
-} dma_channel_regs_t;
 
 /* ================================================================================ */
 /* ================                HAL Status Types                 ============== */
