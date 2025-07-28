@@ -35,10 +35,12 @@ static uint32_t g_msg_id_counter = 1;
 
 // 查找寄存器映射
 static reg_mapping_t* find_register_mapping(void *addr) {
+    uintptr_t physical_addr = (uintptr_t)addr;
+    
     for (int i = 0; i < g_reg_mapping_count; i++) {
         reg_mapping_t *mapping = &g_reg_mappings[i];
-        if (addr >= mapping->start_addr && 
-            addr < (char*)mapping->start_addr + (mapping->end_addr - mapping->start_addr)) {
+        if (physical_addr >= mapping->start_addr && 
+            physical_addr < mapping->end_addr) {
             return mapping;
         }
     }
@@ -71,26 +73,57 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
     ucontext_t *uc = (ucontext_t *)ctx;
     uintptr_t rip = uc->uc_mcontext.gregs[REG_RIP];
     uint8_t *insn = (uint8_t *)rip;
-    if (insn[0] == 0x8B) {               // 8b 00  mov    (%rax),%eax - 读操作
+    
+    int instruction_length = 2; // default length
+    
+    if (insn[0] == 0x8B) {               // MOV r32, r/m32 - 读操作
         msg.type = MSG_REG_READ;
 
-        //printf("[%s:%s] Register read start: addr=0x%08X\n", __FILE__, __func__, msg.address);
+        // 计算指令长度 - 8B指令的长度取决于ModR/M字节
+        if ((insn[1] & 0xC0) == 0x00) {       // mod = 00, no displacement
+            instruction_length = 2;
+        } else if ((insn[1] & 0xC0) == 0x40) { // mod = 01, 8-bit displacement  
+            instruction_length = 3;
+        } else if ((insn[1] & 0xC0) == 0x80) { // mod = 10, 32-bit displacement
+            instruction_length = 6;
+        } else {                              // mod = 11, register-to-register
+            instruction_length = 2;
+        }
+
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register read completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
             
-            // 将读取的值设置到目标寄存器(这里假设是EAX)
-            uc->uc_mcontext.gregs[REG_RAX] = response.data.response.result;
+            // 将读取的值设置到目标寄存器
+            // 从ModR/M字节解析目标寄存器
+            uint8_t reg = (insn[1] >> 3) & 0x07;
+            switch (reg) {
+                case 0: uc->uc_mcontext.gregs[REG_RAX] = response.data.response.result; break;
+                case 1: uc->uc_mcontext.gregs[REG_RCX] = response.data.response.result; break;
+                case 2: uc->uc_mcontext.gregs[REG_RDX] = response.data.response.result; break;
+                case 3: uc->uc_mcontext.gregs[REG_RBX] = response.data.response.result; break;
+                default: uc->uc_mcontext.gregs[REG_RAX] = response.data.response.result; break;
+            }
         } else {
             printf("[%s:%s] Failed to handle register read\n", __FILE__, __func__);
             exit(1);
         }
 
-        uc->uc_mcontext.gregs[REG_RIP] += 2; // next instruction
-    } else if (insn[0] == 0x89) {        // 89 02  mov    %eax,(%rdx) - 写寄存器操作
+        uc->uc_mcontext.gregs[REG_RIP] += instruction_length;
+    } else if (insn[0] == 0x89) {        // MOV r/m32, r32 - 写寄存器操作
         msg.value = uc->uc_mcontext.gregs[REG_RAX];
         msg.type = MSG_REG_WRITE;
 
-        //printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
+        // 计算指令长度
+        if ((insn[1] & 0xC0) == 0x00) {       
+            instruction_length = 2;
+        } else if ((insn[1] & 0xC0) == 0x40) { 
+            instruction_length = 3;
+        } else if ((insn[1] & 0xC0) == 0x80) { 
+            instruction_length = 6;
+        } else {                              
+            instruction_length = 2;
+        }
+
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register write completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
         } else {
@@ -98,12 +131,11 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
             exit(1);
         }
 
-        uc->uc_mcontext.gregs[REG_RIP] += 2; // next instruction 
-    } else if (insn[0] == 0xC7) {        // c7 00 01 00 00 00       movl   $0x1,(%rax) - 写立即数操作
+        uc->uc_mcontext.gregs[REG_RIP] += instruction_length;
+    } else if (insn[0] == 0xC7) {        // MOV r/m32, imm32 - 写立即数操作
         msg.value = *(uint32_t *)(rip + 2);
         msg.type = MSG_REG_WRITE;
 
-        //printf("[%s:%s] Register write start: addr=0x%08X, value=0x%08X\n", __FILE__, __func__, msg.address, msg.value);
         if (handle_sim_message(&msg, &response) == 0) {
             printf("[%s:%s] Register write completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
         } else {
@@ -114,6 +146,19 @@ static void segfault_handler(int sig, siginfo_t *si, void *ctx) {
         uc->uc_mcontext.gregs[REG_RIP] += 6; // next instruction
     } else {                            // 对于其他不支持的指令，我们简化处理：
         printf("[%s:%s] Unsupported instruction: 0x%02X at RIP=0x%lx, treating as read\n", __FILE__, __func__, insn[0], rip);
+        
+        // 对于不支持的指令，默认作为读操作处理
+        msg.type = MSG_REG_READ;
+        if (handle_sim_message(&msg, &response) == 0) {
+            printf("[%s:%s] Register read completed: addr=0x%08X, 0x%08X\n", __FILE__, __func__, msg.address, response.data.response.result);
+            uc->uc_mcontext.gregs[REG_RAX] = response.data.response.result;
+        } else {
+            printf("[%s:%s] Failed to handle register read\n", __FILE__, __func__);
+            exit(1);
+        }
+        
+        // For unsupported instructions, skip them carefully - assume 2 bytes for now
+        uc->uc_mcontext.gregs[REG_RIP] += 2;
     }
 }
 

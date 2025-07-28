@@ -112,9 +112,8 @@ static uint32_t uart_reg_read(simulator_plugin_t *plugin, uint32_t address) {
     uint32_t relative_addr = address - priv->base_addr;
     
     switch (relative_addr) {
-        case 0x00:  // UART_TX_REG offset
-            return priv->tx_reg;
-        case 0x04:  // UART_RX_REG offset
+        case 0x00:  // UART_DR (Data Register)
+            // For reads, return received data
             if (priv->rx_head != priv->rx_tail) {
                 uint8_t data = priv->rx_buffer[priv->rx_tail];
                 priv->rx_tail = (priv->rx_tail + 1) % 256;
@@ -125,11 +124,36 @@ static uint32_t uart_reg_read(simulator_plugin_t *plugin, uint32_t address) {
                 return data;
             }
             return 0;
-        case 0x08:  // UART_STATUS_REG offset
-            return priv->status_reg;
-        case 0x0C:  // UART_CTRL_REG offset
+        case 0x04:  // UART_RSR_ECR (Receive Status/Error Clear Register)
+            return 0; // No errors for now
+        case 0x18:  // UART_FR (Flag Register)
+            return priv->status_reg; // Use status_reg as flag register
+        case 0x20:  // UART_ILPR (IrDA Low Power Register)
+            return 0; // Not implemented
+        case 0x24:  // UART_IBRD (Integer Baud Rate Register)
+            return 0x006E; // Default baud rate divisor
+        case 0x28:  // UART_FBRD (Fractional Baud Rate Register)
+            return 0x0000; // Default fractional baud rate
+        case 0x2C:  // UART_LCR_H (Line Control Register)
+            return 0x0070; // Default line control
+        case 0x30:  // UART_CR (Control Register)
             return priv->ctrl_reg;
-        case 0x10:  // UART_DMA_CTRL_REG offset
+        case 0x34:  // UART_IFLS (Interrupt FIFO Level Select Register)
+            return 0x0000; // Default FIFO levels
+        case 0x38:  // UART_IMSC (Interrupt Mask Set/Clear Register)
+            return 0x0000; // No interrupts masked by default
+        case 0x3C:  // UART_RIS (Raw Interrupt Status Register)
+            return 0x0000; // No raw interrupts
+        case 0x40:  // UART_MIS (Masked Interrupt Status Register)
+            return 0x0000; // No masked interrupts
+        case 0x48:  // UART_DMACR (DMA Control Register)
+            return priv->dma_ctrl_reg;
+        // Legacy compatibility offsets
+        case 0x08:  // Legacy UART_STATUS_REG offset
+            return priv->status_reg;
+        case 0x0C:  // Legacy UART_CTRL_REG offset
+            return priv->ctrl_reg;
+        case 0x10:  // Legacy UART_DMA_CTRL_REG offset
             return priv->dma_ctrl_reg;
         default:
             printf("[uart_plugin.c:%s] %s UART: Invalid read address 0x%08X (relative: 0x%08X)\n", 
@@ -146,7 +170,7 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
     uint32_t relative_addr = address - priv->base_addr;
     
     switch (relative_addr) {
-        case 0x00:  // UART_TX_REG offset
+        case 0x00:  // UART_DR_REG (Data Register)
             priv->tx_reg = value;
             printf("[uart_plugin.c:%s] %s UART transmit: 0x%02X ('%c')\n", 
                    __func__, priv->instance_name, value & 0xFF, 
@@ -158,16 +182,32 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                 trigger_interrupt(priv->instance_name, 5);
             }
             break;
-        case 0x04:  // UART_RX_REG offset
-            // RX寄存器通常是只读的
-            printf("[uart_plugin.c:%s] %s UART: Warning - write to RX register\n", 
+        case 0x04:  // UART_RSR_ECR (Receive Status/Error Clear Register)
+            // Status/Error clear register
+            printf("[uart_plugin.c:%s] %s UART: RSR/ECR register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x18:  // UART_FR (Flag Register) - read only
+            printf("[uart_plugin.c:%s] %s UART: Warning - write to read-only FR register\n", 
                    __func__, priv->instance_name);
             break;
-        case 0x08:  // UART_STATUS_REG offset
-            // 状态寄存器可能部分可写（清除标志位）
-            priv->status_reg = value;
+        case 0x20:  // UART_ILPR (IrDA Low Power Register)
+            printf("[uart_plugin.c:%s] %s UART: ILPR register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
             break;
-        case 0x0C:  // UART_CTRL_REG offset
+        case 0x24:  // UART_IBRD (Integer Baud Rate Register)
+            printf("[uart_plugin.c:%s] %s UART: IBRD register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x28:  // UART_FBRD (Fractional Baud Rate Register)
+            printf("[uart_plugin.c:%s] %s UART: FBRD register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x2C:  // UART_LCR_H (Line Control Register)
+            printf("[uart_plugin.c:%s] %s UART: LCR_H register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x30:  // UART_CR (Control Register)
             priv->ctrl_reg = value;
             printf("[uart_plugin.c:%s] %s UART control register set: 0x%08X\n", 
                    __func__, priv->instance_name, value);
@@ -195,7 +235,19 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                        __func__, priv->instance_name);
             }
             break;
-        case 0x10:  // UART_DMA_CTRL_REG offset
+        case 0x34:  // UART_IFLS (Interrupt FIFO Level Select Register)
+            printf("[uart_plugin.c:%s] %s UART: IFLS register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x38:  // UART_IMSC (Interrupt Mask Set/Clear Register)
+            printf("[uart_plugin.c:%s] %s UART: IMSC register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x44:  // UART_ICR (Interrupt Clear Register)
+            printf("[uart_plugin.c:%s] %s UART: ICR register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x48:  // UART_DMACR (DMA Control Register)
             priv->dma_ctrl_reg = value;
             printf("[uart_plugin.c:%s] %s UART DMA control register set: 0x%08X\n", 
                    __func__, priv->instance_name, value);
@@ -209,6 +261,22 @@ static int uart_reg_write(simulator_plugin_t *plugin, uint32_t address, uint32_t
                 printf("[uart_plugin.c:%s] %s UART DMA RX enabled\n", 
                        __func__, priv->instance_name);
             }
+            break;
+        // Legacy compatibility offsets (for simplified register access)
+        case 0x08:  // Legacy UART_STATUS_REG offset
+            priv->status_reg = value;
+            printf("[uart_plugin.c:%s] %s UART: Legacy status register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x0C:  // Legacy UART_CTRL_REG offset
+            priv->ctrl_reg = value;
+            printf("[uart_plugin.c:%s] %s UART: Legacy control register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
+            break;
+        case 0x10:  // Legacy UART_DMA_CTRL_REG offset
+            priv->dma_ctrl_reg = value;
+            printf("[uart_plugin.c:%s] %s UART: Legacy DMA control register write: 0x%08X\n", 
+                   __func__, priv->instance_name, value);
             break;
         default:
             printf("[uart_plugin.c:%s] %s UART: Invalid write address 0x%08X (relative: 0x%08X)\n", 

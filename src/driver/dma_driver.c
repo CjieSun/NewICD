@@ -19,6 +19,9 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
+#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
+
 #include "dma_driver.h"
 #include "../common/register_map.h"
 #include "../sim_interface/interrupt_manager.h"
